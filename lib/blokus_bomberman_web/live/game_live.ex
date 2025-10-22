@@ -38,6 +38,7 @@ defmodule BlokusBombermanWeb.GameLive do
       p1_selection: p1_selection,
       power_state: power_state,
       animating_pieces: [],  # List of pieces currently animating
+      dissolving_pieces: [],  # List of invalid pieces dissolving
       preview_landing: nil  # Preview of where piece will land (for debugging)
     )}
   end
@@ -124,33 +125,33 @@ defmodule BlokusBombermanWeb.GameLive do
           {_piece_type, piece_coords} = get_selected_piece(socket.assigns.p1_selection)
           player = game.player1
 
-          # Calculate target position (validate it first)
-          target_coords = Game.calculate_placement(game, 1, piece_coords, player1_state.power)
+          # Calculate target position and check validity
+          {target_coords, is_valid} = Game.calculate_placement_with_validity(game, 1, piece_coords, player1_state.power)
 
-          if target_coords != nil do
-            # Start animation - the first block of target_coords will travel from player position
-            animation = %{
-              player_id: 1,
-              piece_coords: piece_coords,
-              start_pos: player.position,
-              target_coords: target_coords,
-              color: player.color,
-              progress: 0.0,
-              start_time: System.monotonic_time(:millisecond)
-            }
+          # Always animate, but mark if placement is valid or not
+          animation = %{
+            player_id: 1,
+            piece_coords: piece_coords,
+            start_pos: player.position,
+            target_coords: target_coords,
+            color: player.color,
+            progress: 0.0,
+            start_time: System.monotonic_time(:millisecond),
+            is_valid: is_valid  # Mark if this will be a valid placement
+          }
 
-            schedule_animation_tick()
+          schedule_animation_tick()
 
-            {[animation | socket.assigns.animating_pieces],
-             %{power_state | player1: %{charging: false, power: 0}},
-             target_coords,  # Store for preview
-             "Player 1 threw piece with #{player1_state.power}% power!"}
+          message_text = if is_valid do
+            "Player 1 threw piece with #{player1_state.power}% power!"
           else
-            {socket.assigns.animating_pieces,
-             %{power_state | player1: %{charging: false, power: 0}},
-             nil,
-             "Invalid placement! Try different power or position."}
+            "Invalid placement! Piece will dissolve..."
           end
+
+          {[animation | socket.assigns.animating_pieces],
+           %{power_state | player1: %{charging: false, power: 0}},
+           target_coords,  # Store for preview
+           message_text}
         else
           {socket.assigns.animating_pieces,
            %{power_state | player1: %{charging: false, power: 0}},
@@ -238,21 +239,57 @@ defmodule BlokusBombermanWeb.GameLive do
         end)
         |> Enum.split_with(fn anim -> anim.progress >= 1.0 end)
 
-      # Add completed animations to the game board
-      new_game = Enum.reduce(completed, socket.assigns.game, fn anim, game ->
+      # Separate valid and invalid completed animations
+      {valid_completed, invalid_completed} = Enum.split_with(completed, fn anim ->
+        Map.get(anim, :is_valid, true)
+      end)
+
+      # Only add valid placements to the game board
+      new_game = Enum.reduce(valid_completed, socket.assigns.game, fn anim, game ->
         placed_piece = {anim.player_id, anim.target_coords, anim.color}
         %{game | placed_pieces: [placed_piece | game.placed_pieces]}
       end)
 
-      # Schedule next tick if there are still animating pieces
-      if length(still_animating) > 0 do
+      # Invalid pieces start dissolving - add them back with fade progress
+      dissolving = invalid_completed
+        |> Enum.map(fn anim ->
+          anim
+          |> Map.put(:progress, 1.0)  # Keep at destination
+          |> Map.put(:dissolving, true)
+          |> Map.put(:dissolve_start, current_time)
+          |> Map.put(:dissolve_progress, 0.0)
+        end)
+
+      # Update dissolving pieces
+      existing_dissolving = Map.get(socket.assigns, :dissolving_pieces, [])
+
+      {_fully_dissolved, still_dissolving} = existing_dissolving
+        |> Enum.concat(dissolving)
+        |> Enum.map(fn anim ->
+          # Get dissolve_start, default to current_time if not present
+          dissolve_start = Map.get(anim, :dissolve_start, current_time)
+          elapsed = current_time - dissolve_start
+          dissolve_progress = min(1.0, elapsed / 300)  # 300ms dissolve duration
+          Map.put(anim, :dissolve_progress, dissolve_progress)
+        end)
+        |> Enum.split_with(fn anim -> Map.get(anim, :dissolve_progress, 0.0) >= 1.0 end)
+
+      # Schedule next tick if there are still animating or dissolving pieces
+      if length(still_animating) > 0 or length(still_dissolving) > 0 do
         schedule_animation_tick()
       end
 
-      # Clear preview when animation completes
-      new_preview = if length(still_animating) == 0, do: nil, else: socket.assigns.preview_landing
+      # Clear preview when all animations complete
+      new_preview = if length(still_animating) == 0 and length(still_dissolving) == 0,
+        do: nil,
+        else: socket.assigns.preview_landing
 
-      {:noreply, assign(socket, game: new_game, animating_pieces: still_animating, preview_landing: new_preview)}
+      {:noreply, assign(socket,
+        game: new_game,
+        animating_pieces: still_animating,
+        dissolving_pieces: still_dissolving,
+        preview_landing: new_preview
+      )}
     else
       {:noreply, socket}
     end
@@ -422,6 +459,9 @@ defmodule BlokusBombermanWeb.GameLive do
     # Check if this cell has an animating piece
     animating_color = get_animating_piece_color(assigns.animating_pieces, {x, y})
 
+    # Check if this cell has a dissolving piece
+    dissolving_info = get_dissolving_piece_info(assigns.dissolving_pieces, {x, y})
+
     # Check if this cell is in the preview landing position (for debugging)
     is_preview = assigns.preview_landing != nil and {x, y} in assigns.preview_landing
 
@@ -433,6 +473,7 @@ defmodule BlokusBombermanWeb.GameLive do
       |> assign(:on_edge, on_edge)
       |> assign(:placed_color, placed_piece_color)
       |> assign(:animating_color, animating_color)
+      |> assign(:dissolving_info, dissolving_info)
       |> assign(:is_preview, is_preview)
 
     ~H"""
@@ -451,6 +492,19 @@ defmodule BlokusBombermanWeb.GameLive do
         <div class="w-8 h-8 border-2 border-yellow-400 bg-yellow-500 opacity-50 flex items-center justify-center text-white font-bold text-xs">
           🎯
         </div>
+
+      <% @dissolving_info -> %>
+        <%=
+          {color, dissolve_progress} = @dissolving_info
+          opacity = round((1.0 - dissolve_progress) * 60)
+          if color == :blue do
+        %>
+          <div class={"w-8 h-8 border border-blue-300 bg-blue-400 opacity-#{opacity}"}>
+          </div>
+        <% else %>
+          <div class={"w-8 h-8 border border-red-300 bg-red-400 opacity-#{opacity}"}>
+          </div>
+        <% end %>
 
       <% @animating_color -> %>
         <%= if @animating_color == :blue do %>
@@ -486,6 +540,18 @@ defmodule BlokusBombermanWeb.GameLive do
       # Interpolate between start position and target coordinates
       current_coords = interpolate_piece_position(anim)
       if coord in current_coords, do: anim.color, else: nil
+    end)
+  end
+
+  defp get_dissolving_piece_info(dissolving_pieces, coord) do
+    Enum.find_value(dissolving_pieces, fn anim ->
+      # Dissolving pieces stay at their target position
+      current_coords = interpolate_piece_position(anim)
+      if coord in current_coords do
+        {anim.color, anim.dissolve_progress}
+      else
+        nil
+      end
     end)
   end
 

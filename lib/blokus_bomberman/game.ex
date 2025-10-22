@@ -48,10 +48,8 @@ defmodule BlokusBomberman.Game do
     end
   end
 
-  @doc """
-  Move along the perimeter in clockwise (:down) or counter-clockwise (:up) direction.
-  The perimeter is treated as a continuous loop.
-  """
+  # Move along the perimeter in clockwise (:down) or counter-clockwise (:up) direction.
+  # The perimeter is treated as a continuous loop.
   defp move_along_perimeter({x, y}, direction) do
     size = Board.size()
     max_coord = size - 1
@@ -109,6 +107,27 @@ defmodule BlokusBomberman.Game do
   Returns the target coordinates if valid, nil otherwise.
   """
   def calculate_placement(game, player_id, piece_coords, power) do
+    coords = calculate_placement_coords(game, player_id, piece_coords, power)
+
+    # Check if all coordinates are valid (within bounds and not overlapping)
+    if valid_placement?(game, coords) do
+      coords
+    else
+      nil
+    end
+  end
+
+  @doc """
+  Calculate placement coordinates without validation.
+  Returns {coords, is_valid} tuple for animation purposes.
+  """
+  def calculate_placement_with_validity(game, player_id, piece_coords, power) do
+    coords = calculate_placement_coords(game, player_id, piece_coords, power)
+    is_valid = valid_placement?(game, coords)
+    {coords, is_valid}
+  end
+
+  defp calculate_placement_coords(game, player_id, piece_coords, power) do
     player_key = player_key(player_id)
     player = Map.get(game, player_key)
     {px, py} = player.position
@@ -134,7 +153,7 @@ defmodule BlokusBomberman.Game do
 
     # Translate piece coordinates to world position
     # Each block is positioned relative to where the anchor block should be
-    placed_coords = Enum.map(piece_coords, fn {dx, dy} ->
+    Enum.map(piece_coords, fn {dx, dy} ->
       # Calculate offset from anchor block
       offset_x = dx - anchor_dx
       offset_y = dy - anchor_dy
@@ -142,13 +161,6 @@ defmodule BlokusBomberman.Game do
       {anchor_target_pos |> elem(0) |> Kernel.+(offset_x),
        anchor_target_pos |> elem(1) |> Kernel.+(offset_y)}
     end)
-
-    # Check if all coordinates are valid (within bounds and not overlapping)
-    if valid_placement?(game, placed_coords) do
-      placed_coords
-    else
-      nil
-    end
   end
 
   @doc """
