@@ -214,6 +214,9 @@ defmodule BlokusBomberman.Game do
     # Check all coordinates are within bounds
     all_in_bounds = Enum.all?(coords, &Board.in_bounds?/1)
 
+    # Check no coordinates are on the edges (player movement area)
+    not_on_edges = Enum.all?(coords, fn coord -> not Board.on_edge?(coord) end)
+
     # Check no overlap with existing pieces
     existing_coords = game.placed_pieces
       |> Enum.flat_map(fn {_player_id, piece_coords, _color} -> piece_coords end)
@@ -222,7 +225,7 @@ defmodule BlokusBomberman.Game do
     no_overlap = coords
       |> Enum.all?(fn coord -> not MapSet.member?(existing_coords, coord) end)
 
-    all_in_bounds and no_overlap
+    all_in_bounds and not_on_edges and no_overlap
   end
 
   defp player_key(1), do: :player1
