@@ -1,10 +1,11 @@
 defmodule BlokusBomberman.Board do
   @moduledoc """
-  Represents a 20x20 game board.
+  Represents a 22x22 game board with 20x20 playable interior.
   Avatars can only move along the outer edges of the board.
+  The interior 20x20 area is where pieces can be placed.
   """
 
-  @size 20
+  @size 22
 
   def size, do: @size
 
