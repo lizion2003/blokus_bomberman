@@ -33,7 +33,7 @@ defmodule BlokusBombermanWeb.GameLive do
 
     {:ok, assign(socket,
       game: game,
-      message: "Player 1: Select pieces with 1-5, A/D, R, F | Navigate: W/S | Hold SPACE to charge throw",
+      message: "Player 1: Select pieces with 1-5, A/D, R, F | Navigate: W/S | Hold SPACE to charge throw | Press K to clear board",
       keys_pressed: MapSet.new(),
       p1_selection: p1_selection,
       power_state: power_state,
@@ -46,6 +46,7 @@ defmodule BlokusBombermanWeb.GameLive do
     keys_pressed = MapSet.put(socket.assigns.keys_pressed, key)
     p1_selection = socket.assigns.p1_selection
     power_state = socket.assigns.power_state
+    game = socket.assigns.game
 
     # Handle Player 1 piece selection controls
     new_p1_selection = case key do
@@ -88,10 +89,22 @@ defmodule BlokusBombermanWeb.GameLive do
         power_state
     end
 
+    # Handle K key to clear all pieces (debugging)
+    {new_game, message} = case key do
+      "k" ->
+        {%{game | placed_pieces: []}, "🧹 Board cleared! (Debug mode)"}
+      "K" ->
+        {%{game | placed_pieces: []}, "🧹 Board cleared! (Debug mode)"}
+      _ ->
+        {game, socket.assigns.message}
+    end
+
     {:noreply, assign(socket,
       keys_pressed: keys_pressed,
       p1_selection: new_p1_selection,
-      power_state: new_power_state
+      power_state: new_power_state,
+      game: new_game,
+      message: message
     )}
   end
 
@@ -286,7 +299,7 @@ defmodule BlokusBombermanWeb.GameLive do
 
       <div class="flex gap-8 mb-6">
         <div class="px-4 py-2 rounded bg-blue-600 text-white font-bold">
-          Player 1 (Blue): W/S Move | 1-5 Size | A/D Select | R Rotate | F Flip
+          Player 1 (Blue): W/S Move | 1-5 Size | A/D Select | R Rotate | F Flip | K Clear
         </div>
         <div class="px-4 py-2 rounded bg-red-600 text-white font-bold">
           Player 2 (Red): ↑ / ↓
@@ -329,6 +342,7 @@ defmodule BlokusBombermanWeb.GameLive do
               <p><strong>R:</strong> Rotate</p>
               <p><strong>F:</strong> Flip</p>
               <p><strong>SPACE:</strong> Hold to charge throw</p>
+              <p><strong>K:</strong> Clear board (debug)</p>
             </div>
           </div>
 
