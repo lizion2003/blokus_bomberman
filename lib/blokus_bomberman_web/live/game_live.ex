@@ -295,7 +295,6 @@ defmodule BlokusBombermanWeb.GameLive do
     ~H"""
     <div class="flex flex-col items-center p-4 bg-gray-900 min-h-screen" phx-window-keydown="keydown" phx-window-keyup="keyup">
       <h1 class="text-4xl font-bold mb-4 text-white">Blokus Bomberman</h1>
-      <p class="text-lg mb-6 text-gray-300"><%= @message %></p>
 
       <div class="flex gap-8 mb-6">
         <div class="px-4 py-2 rounded bg-blue-600 text-white font-bold">
@@ -380,7 +379,14 @@ defmodule BlokusBombermanWeb.GameLive do
         </div>
       </div>
 
-      <div class="mt-6 text-gray-400 text-sm">
+      <!-- Message Dialog Box (Below Board) -->
+      <div class="mt-6 bg-gray-800 border-2 border-gray-600 rounded-lg p-4 w-full max-w-4xl">
+        <div class="text-center">
+          <p class="text-lg font-semibold text-gray-200"><%= @message %></p>
+        </div>
+      </div>
+
+      <div class="mt-4 text-gray-400 text-sm text-center">
         <p>💡 Select and transform pieces, then throw them onto the board!</p>
         <p>Avatars automatically wrap around all four edges - don't collide!</p>
       </div>
