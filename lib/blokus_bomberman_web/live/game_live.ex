@@ -269,8 +269,26 @@ defmodule BlokusBombermanWeb.GameLive do
           # Get dissolve_start, default to current_time if not present
           dissolve_start = Map.get(anim, :dissolve_start, current_time)
           elapsed = current_time - dissolve_start
-          dissolve_progress = min(1.0, elapsed / 300)  # 300ms dissolve duration
-          Map.put(anim, :dissolve_progress, dissolve_progress)
+          dissolve_progress = min(1.0, elapsed / 500)  # 500ms dissolve duration (slower for clarity)
+
+          # Calculate shake offset (oscillates quickly then fades)
+          shake_frequency = 30.0  # Fast shake
+          shake_amplitude = if dissolve_progress < 0.6, do: 8, else: 0  # Shake for first 300ms (8px amplitude)
+          shake_offset_x = if dissolve_progress < 0.6 do
+            round(:math.sin(elapsed / 1000 * shake_frequency * :math.pi() * 2) * shake_amplitude)
+          else
+            0
+          end
+          shake_offset_y = if dissolve_progress < 0.6 do
+            round(:math.cos(elapsed / 1000 * shake_frequency * :math.pi() * 2) * shake_amplitude)
+          else
+            0
+          end
+
+          anim
+          |> Map.put(:dissolve_progress, dissolve_progress)
+          |> Map.put(:shake_offset_x, shake_offset_x)
+          |> Map.put(:shake_offset_y, shake_offset_y)
         end)
         |> Enum.split_with(fn anim -> Map.get(anim, :dissolve_progress, 0.0) >= 1.0 end)
 
@@ -488,23 +506,23 @@ defmodule BlokusBombermanWeb.GameLive do
           2
         </div>
 
+      <% @dissolving_info -> %>
+        <%
+          {_color, dissolve_progress, shake_offset_x, shake_offset_y} = @dissolving_info
+          opacity = (1.0 - dissolve_progress)
+          transform = "translate(#{shake_offset_x}px, #{shake_offset_y}px)"
+        %>
+          <div
+            class="w-8 h-8 border-2 border-red-600 bg-red-500 flex items-center justify-center"
+            style={"transform: #{transform}; opacity: #{opacity};"}
+          >
+            <span class="text-white text-2xl font-bold">✗</span>
+          </div>
+
       <% @is_preview -> %>
         <div class="w-8 h-8 border-2 border-yellow-400 bg-yellow-500 opacity-50 flex items-center justify-center text-white font-bold text-xs">
           🎯
         </div>
-
-      <% @dissolving_info -> %>
-        <%=
-          {color, dissolve_progress} = @dissolving_info
-          opacity = round((1.0 - dissolve_progress) * 60)
-          if color == :blue do
-        %>
-          <div class={"w-8 h-8 border border-blue-300 bg-blue-400 opacity-#{opacity}"}>
-          </div>
-        <% else %>
-          <div class={"w-8 h-8 border border-red-300 bg-red-400 opacity-#{opacity}"}>
-          </div>
-        <% end %>
 
       <% @animating_color -> %>
         <%= if @animating_color == :blue do %>
@@ -548,7 +566,9 @@ defmodule BlokusBombermanWeb.GameLive do
       # Dissolving pieces stay at their target position
       current_coords = interpolate_piece_position(anim)
       if coord in current_coords do
-        {anim.color, anim.dissolve_progress}
+        shake_offset_x = Map.get(anim, :shake_offset_x, 0)
+        shake_offset_y = Map.get(anim, :shake_offset_y, 0)
+        {anim.color, anim.dissolve_progress, shake_offset_x, shake_offset_y}
       else
         nil
       end
