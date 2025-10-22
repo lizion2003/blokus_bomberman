@@ -52,12 +52,19 @@ defmodule BlokusBombermanWeb.GameLive do
 
     # Handle Player 1 piece selection controls
     new_p1_selection = case key do
-      # Size tab selection (1-5)
-      "1" -> %{p1_selection | size_tab: 1, piece_index: 0}
-      "2" -> %{p1_selection | size_tab: 2, piece_index: 0}
-      "3" -> %{p1_selection | size_tab: 3, piece_index: 0}
-      "4" -> %{p1_selection | size_tab: 4, piece_index: 0}
-      "5" -> %{p1_selection | size_tab: 5, piece_index: 0}
+      # Size group cycling (Q/E to cycle through groups 1-5)
+      "q" ->
+        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 5
+        %{p1_selection | size_tab: new_size, piece_index: 0}
+      "Q" ->
+        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 5
+        %{p1_selection | size_tab: new_size, piece_index: 0}
+      "e" ->
+        new_size = if p1_selection.size_tab < 5, do: p1_selection.size_tab + 1, else: 1
+        %{p1_selection | size_tab: new_size, piece_index: 0}
+      "E" ->
+        new_size = if p1_selection.size_tab < 5, do: p1_selection.size_tab + 1, else: 1
+        %{p1_selection | size_tab: new_size, piece_index: 0}
 
       # Navigate between pieces in group (A/D)
       "a" -> navigate_piece(p1_selection, -1)
@@ -369,7 +376,7 @@ defmodule BlokusBombermanWeb.GameLive do
 
       <div class="flex gap-8 mb-6">
         <div class="px-4 py-2 rounded bg-blue-600 text-white font-bold">
-          Player 1 (Blue): W/S Move | 1-5 Size | A/D Select | R Rotate | F Flip | K Clear
+          Player 1 (Blue): W/S Move | Q/E Group | A/D Select | R Rotate | F Flip | K Clear
         </div>
         <div class="px-4 py-2 rounded bg-red-600 text-white font-bold">
           Player 2 (Red): ↑ / ↓
@@ -407,8 +414,8 @@ defmodule BlokusBombermanWeb.GameLive do
 
             <!-- Controls Help -->
             <div class="mt-4 text-xs text-gray-400">
-              <p><strong>1-5:</strong> Switch size</p>
-              <p><strong>A/D:</strong> Prev/Next piece</p>
+              <p><strong>Q/E:</strong> Switch size group (1-5)</p>
+              <p><strong>A/D:</strong> Prev/Next piece in group</p>
               <p><strong>R:</strong> Rotate</p>
               <p><strong>F:</strong> Flip</p>
               <p><strong>SPACE:</strong> Hold to charge throw</p>
