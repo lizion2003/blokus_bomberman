@@ -55,11 +55,27 @@ defmodule BlokusBomberman.Piece do
 
   @doc """
   Rotate coordinates 90 degrees clockwise
+  Preserves the first coordinate as the anchor point
   """
   def rotate(coords) do
-    coords
-    |> Enum.map(fn {x, y} -> {-y, x} end)
-    |> normalize()
+    if Enum.empty?(coords) do
+      []
+    else
+      # Remember the first coordinate (anchor)
+      [{anchor_x, anchor_y} | _rest] = coords
+
+      # Rotate around the anchor point
+      rotated = Enum.map(coords, fn {x, y} ->
+        # Translate to origin relative to anchor
+        rel_x = x - anchor_x
+        rel_y = y - anchor_y
+        # Rotate 90° clockwise: (x, y) -> (-y, x)
+        {-rel_y, rel_x}
+      end)
+
+      # Normalize to ensure positive coordinates
+      normalize(rotated)
+    end
   end
 
   @doc """

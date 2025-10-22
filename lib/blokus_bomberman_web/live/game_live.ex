@@ -284,7 +284,15 @@ defmodule BlokusBombermanWeb.GameLive do
 
       # Apply transformations
       coords = if selection.flipped, do: Piece.flip_horizontal(coords), else: coords
-      coords = Enum.reduce(1..selection.rotation, coords, fn _, acc -> Piece.rotate(acc) end)
+
+      # Apply rotation based on the rotation value (0-3 for 0°, 90°, 180°, 270°)
+      coords = case selection.rotation do
+        0 -> coords
+        1 -> Piece.rotate(coords)
+        2 -> coords |> Piece.rotate() |> Piece.rotate()
+        3 -> coords |> Piece.rotate() |> Piece.rotate() |> Piece.rotate()
+        _ -> coords
+      end
 
       {piece_type, coords}
     end
@@ -342,6 +350,7 @@ defmodule BlokusBombermanWeb.GameLive do
               <p><strong>F:</strong> Flip</p>
               <p><strong>SPACE:</strong> Hold to charge throw</p>
               <p><strong>K:</strong> Clear board (debug)</p>
+              <p class="mt-2 text-yellow-400"><strong>⭐ Anchor:</strong> Travels from your position</p>
             </div>
           </div>
 
@@ -467,33 +476,26 @@ defmodule BlokusBombermanWeb.GameLive do
     {start_x, start_y} = anim.start_pos
     progress = anim.progress
 
-    # Calculate the center of target coordinates
-    target_center = calculate_center(anim.target_coords)
-    {target_x, target_y} = target_center
+    # Find the anchor point (top-left) of the original piece shape
+    first_piece_coord = hd(anim.piece_coords)
+    {first_dx, first_dy} = first_piece_coord
 
-    # Interpolate the anchor position
-    current_x = start_x + (target_x - start_x) * progress
-    current_y = start_y + (target_y - start_y) * progress
+    # Find corresponding anchor in target
+    first_target = hd(anim.target_coords)
+    {first_target_x, first_target_y} = first_target
 
-    # Calculate offset from center to first piece coordinate
-    {first_x, first_y} = hd(anim.target_coords)
-    offset_x = first_x - target_x
-    offset_y = first_y - target_y
+    # Interpolate the anchor position from start to target
+    anchor_x = start_x + (first_target_x - start_x) * progress
+    anchor_y = start_y + (first_target_y - start_y) * progress
 
-    # Apply offset to all piece coordinates
+    # Use the original piece shape offsets to maintain the piece structure
+    # Apply each piece block's relative position to the moving anchor
     Enum.map(anim.piece_coords, fn {dx, dy} ->
-      x = round(current_x + dx + offset_x)
-      y = round(current_y + dy + offset_y)
-      {x, y}
+      # Calculate offset relative to the first piece coordinate
+      offset_x = dx - first_dx
+      offset_y = dy - first_dy
+      {round(anchor_x + offset_x), round(anchor_y + offset_y)}
     end)
-  end
-
-  defp calculate_center(coords) do
-    count = length(coords)
-    {sum_x, sum_y} = Enum.reduce(coords, {0, 0}, fn {x, y}, {acc_x, acc_y} ->
-      {acc_x + x, acc_y + y}
-    end)
-    {sum_x / count, sum_y / count}
   end
 
   defp render_piece_preview(assigns, selection) do
@@ -516,8 +518,12 @@ defmodule BlokusBombermanWeb.GameLive do
         true -> "1rem"
       end
 
+      # The first coordinate is the anchor block
+      anchor_block = hd(coords)
+
       assigns = assigns
         |> assign(:coords, coords)
+        |> assign(:anchor_block, anchor_block)
         |> assign(:width, width)
         |> assign(:height, height)
         |> assign(:cell_size, cell_size)
@@ -526,13 +532,24 @@ defmodule BlokusBombermanWeb.GameLive do
       <div class="grid gap-0" style={"grid-template-columns: repeat(#{@width}, #{@cell_size});"}>
         <%= for y <- 0..(@height - 1) do %>
           <%= for x <- 0..(@width - 1) do %>
-            <%= if {x, y} in @coords do %>
-              <div class={"border border-blue-400 bg-blue-500"} style={"width: #{@cell_size}; height: #{@cell_size};"}></div>
-            <% else %>
-              <div class="bg-transparent" style={"width: #{@cell_size}; height: #{@cell_size};"}></div>
+            <%= cond do %>
+              <% {x, y} == @anchor_block -> %>
+                <!-- Anchor block - highlighted with different color and star -->
+                <div class="border-2 border-yellow-400 bg-yellow-500 flex items-center justify-center text-white font-bold text-xs" style={"width: #{@cell_size}; height: #{@cell_size};"}>
+                  ⭐
+                </div>
+              <% {x, y} in @coords -> %>
+                <!-- Regular piece block -->
+                <div class="border border-blue-400 bg-blue-500" style={"width: #{@cell_size}; height: #{@cell_size};"}></div>
+              <% true -> %>
+                <!-- Empty space -->
+                <div class="bg-transparent" style={"width: #{@cell_size}; height: #{@cell_size};"}></div>
             <% end %>
           <% end %>
         <% end %>
+      </div>
+      <div class="mt-2 text-xs text-yellow-400 text-center">
+        ⭐ = Anchor (travels from player)
       </div>
       """
     end
