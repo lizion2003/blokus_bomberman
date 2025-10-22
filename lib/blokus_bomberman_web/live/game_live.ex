@@ -4,6 +4,10 @@ defmodule BlokusBombermanWeb.GameLive do
   alias BlokusBomberman.{Game, Board, Piece}
 
   @move_interval 70  # milliseconds between moves when key is held
+  @power_interval 20  # milliseconds between power updates
+  @max_power 100  # Maximum power value
+  @animation_duration 500  # milliseconds for throw animation
+  @animation_interval 16  # ~60 FPS
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,11 +25,19 @@ defmodule BlokusBombermanWeb.GameLive do
       flipped: false  # Whether piece is flipped
     }
 
+    # Initialize power gauge state for both players
+    power_state = %{
+      player1: %{charging: false, power: 0},
+      player2: %{charging: false, power: 0}
+    }
+
     {:ok, assign(socket,
       game: game,
-      message: "Player 1: Select pieces with 1-5, A/D, R, F | Navigate: W/S",
+      message: "Player 1: Select pieces with 1-5, A/D, R, F | Navigate: W/S | Hold SPACE to charge throw",
       keys_pressed: MapSet.new(),
-      p1_selection: p1_selection
+      p1_selection: p1_selection,
+      power_state: power_state,
+      animating_pieces: []  # List of pieces currently animating
     )}
   end
 
@@ -33,6 +45,7 @@ defmodule BlokusBombermanWeb.GameLive do
   def handle_event("keydown", %{"key" => key}, socket) do
     keys_pressed = MapSet.put(socket.assigns.keys_pressed, key)
     p1_selection = socket.assigns.p1_selection
+    power_state = socket.assigns.power_state
 
     # Handle Player 1 piece selection controls
     new_p1_selection = case key do
@@ -60,12 +73,83 @@ defmodule BlokusBombermanWeb.GameLive do
       _ -> p1_selection
     end
 
-    {:noreply, assign(socket, keys_pressed: keys_pressed, p1_selection: new_p1_selection)}
+    # Handle spacebar for power charging
+    new_power_state = case key do
+      " " ->
+        # Start charging for Player 1 (we'll add Player 2 later)
+        player1_state = power_state.player1
+        if not player1_state.charging do
+          schedule_power_tick()
+          %{power_state | player1: %{player1_state | charging: true}}
+        else
+          power_state
+        end
+      _ ->
+        power_state
+    end
+
+    {:noreply, assign(socket,
+      keys_pressed: keys_pressed,
+      p1_selection: new_p1_selection,
+      power_state: new_power_state
+    )}
   end
 
   def handle_event("keyup", %{"key" => key}, socket) do
     keys_pressed = MapSet.delete(socket.assigns.keys_pressed, key)
-    {:noreply, assign(socket, keys_pressed: keys_pressed)}
+    power_state = socket.assigns.power_state
+    game = socket.assigns.game
+
+    # Handle spacebar release - start animation for throwing the piece
+    {new_animating_pieces, new_power_state, message} = case key do
+      " " ->
+        player1_state = power_state.player1
+
+        if player1_state.power > 0 do
+          # Get the selected piece and player position
+          {_piece_type, piece_coords} = get_selected_piece(socket.assigns.p1_selection)
+          player = game.player1
+
+          # Calculate target position (validate it first)
+          target_coords = Game.calculate_placement(game, 1, piece_coords, player1_state.power)
+
+          if target_coords != nil do
+            # Start animation
+            animation = %{
+              player_id: 1,
+              piece_coords: piece_coords,
+              start_pos: player.position,
+              target_coords: target_coords,
+              color: player.color,
+              progress: 0.0,
+              start_time: System.monotonic_time(:millisecond)
+            }
+
+            schedule_animation_tick()
+
+            {[animation | socket.assigns.animating_pieces],
+             %{power_state | player1: %{charging: false, power: 0}},
+             "Player 1 threw piece with #{player1_state.power}% power!"}
+          else
+            {socket.assigns.animating_pieces,
+             %{power_state | player1: %{charging: false, power: 0}},
+             "Invalid placement! Try different power or position."}
+          end
+        else
+          {socket.assigns.animating_pieces,
+           %{power_state | player1: %{charging: false, power: 0}},
+           socket.assigns.message}
+        end
+      _ ->
+        {socket.assigns.animating_pieces, power_state, socket.assigns.message}
+    end
+
+    {:noreply, assign(socket,
+      keys_pressed: keys_pressed,
+      power_state: new_power_state,
+      animating_pieces: new_animating_pieces,
+      message: message
+    )}
   end
 
   defp navigate_piece(selection, direction) do
@@ -97,6 +181,62 @@ defmodule BlokusBombermanWeb.GameLive do
     {:noreply, assign(socket, game: new_game)}
   end
 
+  @impl true
+  def handle_info(:power_tick, socket) do
+    # Only process if socket is still connected
+    if connected?(socket) do
+      power_state = socket.assigns.power_state
+      player1_state = power_state.player1
+
+      new_power_state = if player1_state.charging do
+        # Increase power, cycling back to 0 if it exceeds max
+        new_power = rem(player1_state.power + 2, @max_power + 1)
+
+        # Continue charging
+        schedule_power_tick()
+
+        %{power_state | player1: %{player1_state | power: new_power}}
+      else
+        power_state
+      end
+
+      {:noreply, assign(socket, power_state: new_power_state)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info(:animation_tick, socket) do
+    if connected?(socket) do
+      current_time = System.monotonic_time(:millisecond)
+
+      # Update all animating pieces
+      {completed, still_animating} = socket.assigns.animating_pieces
+        |> Enum.map(fn anim ->
+          elapsed = current_time - anim.start_time
+          progress = min(1.0, elapsed / @animation_duration)
+          %{anim | progress: progress}
+        end)
+        |> Enum.split_with(fn anim -> anim.progress >= 1.0 end)
+
+      # Add completed animations to the game board
+      new_game = Enum.reduce(completed, socket.assigns.game, fn anim, game ->
+        placed_piece = {anim.player_id, anim.target_coords, anim.color}
+        %{game | placed_pieces: [placed_piece | game.placed_pieces]}
+      end)
+
+      # Schedule next tick if there are still animating pieces
+      if length(still_animating) > 0 do
+        schedule_animation_tick()
+      end
+
+      {:noreply, assign(socket, game: new_game, animating_pieces: still_animating)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   defp maybe_move_player(game, player_id, keys, up_keys, down_keys) do
     cond do
       Enum.any?(up_keys, &MapSet.member?(keys, &1)) ->
@@ -110,6 +250,14 @@ defmodule BlokusBombermanWeb.GameLive do
 
   defp schedule_tick do
     Process.send_after(self(), :tick, @move_interval)
+  end
+
+  defp schedule_power_tick do
+    Process.send_after(self(), :power_tick, @power_interval)
+  end
+
+  defp schedule_animation_tick do
+    Process.send_after(self(), :animation_tick, @animation_interval)
   end
 
   defp get_selected_piece(selection) do
@@ -180,6 +328,28 @@ defmodule BlokusBombermanWeb.GameLive do
               <p><strong>A/D:</strong> Prev/Next piece</p>
               <p><strong>R:</strong> Rotate</p>
               <p><strong>F:</strong> Flip</p>
+              <p><strong>SPACE:</strong> Hold to charge throw</p>
+            </div>
+          </div>
+
+          <!-- Power Gauge -->
+          <div class="bg-gray-800 border-4 border-blue-600 rounded-lg p-4 w-64">
+            <h3 class="text-blue-400 font-bold text-lg mb-3">Throw Power</h3>
+            <div class="bg-gray-900 border-2 border-gray-700 rounded overflow-hidden h-8 relative">
+              <!-- Power fill bar -->
+              <div class="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all duration-75" style={"width: #{@power_state.player1.power}%"}>
+              </div>
+              <!-- Power percentage text -->
+              <div class="absolute inset-0 flex items-center justify-center text-white font-bold text-sm">
+                <%= @power_state.player1.power %>%
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-400 text-center">
+              <%= if @power_state.player1.charging do %>
+                <span class="text-yellow-400 animate-pulse">⚡ Charging...</span>
+              <% else %>
+                <span>Hold SPACE to charge</span>
+              <% end %>
             </div>
           </div>
         </div>
@@ -209,12 +379,20 @@ defmodule BlokusBombermanWeb.GameLive do
     p2_pos = assigns.game.player2.position
     on_edge = Board.on_edge?({x, y})
 
+    # Check if this cell has a placed piece
+    placed_piece_color = get_placed_piece_color(assigns.game.placed_pieces, {x, y})
+
+    # Check if this cell has an animating piece
+    animating_color = get_animating_piece_color(assigns.animating_pieces, {x, y})
+
     assigns = assigns
       |> assign(:x, x)
       |> assign(:y, y)
       |> assign(:is_p1, {x, y} == p1_pos)
       |> assign(:is_p2, {x, y} == p2_pos)
       |> assign(:on_edge, on_edge)
+      |> assign(:placed_color, placed_piece_color)
+      |> assign(:animating_color, animating_color)
 
     ~H"""
     <%= cond do %>
@@ -228,6 +406,20 @@ defmodule BlokusBombermanWeb.GameLive do
           2
         </div>
 
+      <% @animating_color -> %>
+        <%= if @animating_color == :blue do %>
+          <div class="w-8 h-8 border border-blue-300 bg-blue-400 opacity-60 animate-pulse"></div>
+        <% else %>
+          <div class="w-8 h-8 border border-red-300 bg-red-400 opacity-60 animate-pulse"></div>
+        <% end %>
+
+      <% @placed_color -> %>
+        <%= if @placed_color == :blue do %>
+          <div class="w-8 h-8 border border-blue-300 bg-blue-400 opacity-80"></div>
+        <% else %>
+          <div class="w-8 h-8 border border-red-300 bg-red-400 opacity-80"></div>
+        <% end %>
+
       <% @on_edge -> %>
         <div class="w-8 h-8 border border-gray-600 bg-gray-700"></div>
 
@@ -235,6 +427,53 @@ defmodule BlokusBombermanWeb.GameLive do
         <div class="w-8 h-8 border border-gray-800 bg-gray-900"></div>
     <% end %>
     """
+  end
+
+  defp get_placed_piece_color(placed_pieces, coord) do
+    Enum.find_value(placed_pieces, fn {_player_id, coords, color} ->
+      if coord in coords, do: color, else: nil
+    end)
+  end
+
+  defp get_animating_piece_color(animating_pieces, coord) do
+    Enum.find_value(animating_pieces, fn anim ->
+      # Interpolate between start position and target coordinates
+      current_coords = interpolate_piece_position(anim)
+      if coord in current_coords, do: anim.color, else: nil
+    end)
+  end
+
+  defp interpolate_piece_position(anim) do
+    {start_x, start_y} = anim.start_pos
+    progress = anim.progress
+
+    # Calculate the center of target coordinates
+    target_center = calculate_center(anim.target_coords)
+    {target_x, target_y} = target_center
+
+    # Interpolate the anchor position
+    current_x = start_x + (target_x - start_x) * progress
+    current_y = start_y + (target_y - start_y) * progress
+
+    # Calculate offset from center to first piece coordinate
+    {first_x, first_y} = hd(anim.target_coords)
+    offset_x = first_x - target_x
+    offset_y = first_y - target_y
+
+    # Apply offset to all piece coordinates
+    Enum.map(anim.piece_coords, fn {dx, dy} ->
+      x = round(current_x + dx + offset_x)
+      y = round(current_y + dy + offset_y)
+      {x, y}
+    end)
+  end
+
+  defp calculate_center(coords) do
+    count = length(coords)
+    {sum_x, sum_y} = Enum.reduce(coords, {0, 0}, fn {x, y}, {acc_x, acc_y} ->
+      {acc_x + x, acc_y + y}
+    end)
+    {sum_x / count, sum_y / count}
   end
 
   defp render_piece_preview(assigns, selection) do

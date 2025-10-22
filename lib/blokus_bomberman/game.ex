@@ -21,7 +21,8 @@ defmodule BlokusBomberman.Game do
         id: 2,
         position: positions.player2,
         color: :red
-      }
+      },
+      placed_pieces: []  # List of placed pieces: [{player_id, coords, color}, ...]
     }
   end
 
@@ -101,6 +102,117 @@ defmodule BlokusBomberman.Game do
       true ->
         {0, max_coord - (index - 3 * segment_length)}
     end
+  end
+
+  @doc """
+  Calculate where a piece would be placed without actually placing it.
+  Returns the target coordinates if valid, nil otherwise.
+  """
+  def calculate_placement(game, player_id, piece_coords, power) do
+    player_key = player_key(player_id)
+    player = Map.get(game, player_key)
+    {px, py} = player.position
+
+    # Determine throw direction based on player position on edge
+    direction = get_throw_direction({px, py})
+
+    # Calculate placement distance based on power (0-100)
+    max_distance = Board.size() - 1
+    distance = if power >= 95 do
+      max_distance
+    else
+      # Scale power (0-94) to distance (1 to max_distance-1)
+      max(1, round(power / 100.0 * max_distance))
+    end
+
+    # Calculate the anchor position for the piece
+    anchor_pos = calculate_throw_position({px, py}, direction, distance)
+
+    # Translate piece coordinates to world position
+    placed_coords = Enum.map(piece_coords, fn {dx, dy} ->
+      {anchor_pos |> elem(0) |> Kernel.+(dx), anchor_pos |> elem(1) |> Kernel.+(dy)}
+    end)
+
+    # Check if all coordinates are valid (within bounds and not overlapping)
+    if valid_placement?(game, placed_coords) do
+      placed_coords
+    else
+      nil
+    end
+  end
+
+  @doc """
+  Place a piece on the board at a calculated position based on power and player position.
+  Power range: 0-100
+  - 0-94: Place at calculated distance
+  - 95-100: Place at furthest position
+  """
+  def place_piece(game, player_id, piece_coords, power) do
+    placed_coords = calculate_placement(game, player_id, piece_coords, power)
+
+    if placed_coords do
+      player_key = player_key(player_id)
+      player = Map.get(game, player_key)
+      # Add placed piece to game state
+      placed_piece = {player_id, placed_coords, player.color}
+      %{game | placed_pieces: [placed_piece | game.placed_pieces]}
+    else
+      # Invalid placement, return game unchanged
+      game
+    end
+  end
+
+  defp get_throw_direction({x, y}) do
+    max_coord = Board.size() - 1
+
+    cond do
+      # Top edge - throw down
+      y == 0 and x > 0 and x < max_coord -> :down
+      # Bottom edge - throw up
+      y == max_coord and x > 0 and x < max_coord -> :up
+      # Left edge - throw right
+      x == 0 and y > 0 and y < max_coord -> :right
+      # Right edge - throw left
+      x == max_coord and y > 0 and y < max_coord -> :left
+      # Top-left corner - throw diagonally down-right
+      x == 0 and y == 0 -> :down_right
+      # Top-right corner - throw diagonally down-left
+      x == max_coord and y == 0 -> :down_left
+      # Bottom-left corner - throw diagonally up-right
+      x == 0 and y == max_coord -> :up_right
+      # Bottom-right corner - throw diagonally up-left
+      x == max_coord and y == max_coord -> :up_left
+      # Default
+      true -> :down
+    end
+  end
+
+  defp calculate_throw_position({px, py}, direction, distance) do
+    case direction do
+      :down -> {px, py + distance}
+      :up -> {px, py - distance}
+      :right -> {px + distance, py}
+      :left -> {px - distance, py}
+      :down_right -> {px + distance, py + distance}
+      :down_left -> {px - distance, py + distance}
+      :up_right -> {px + distance, py - distance}
+      :up_left -> {px - distance, py - distance}
+    end
+  end
+
+  defp valid_placement?(game, coords) do
+    # Check all coordinates are within bounds
+    all_in_bounds = Enum.all?(coords, &Board.in_bounds?/1)
+
+    # Check no overlap with existing pieces
+    existing_coords = game.placed_pieces
+      |> Enum.flat_map(fn {_player_id, piece_coords, _color} -> piece_coords end)
+      |> MapSet.new()
+
+    no_overlap = coords
+      |> Enum.all?(fn coord -> not MapSet.member?(existing_coords, coord) end)
+
+    all_in_bounds and no_overlap
   end
 
   defp player_key(1), do: :player1
