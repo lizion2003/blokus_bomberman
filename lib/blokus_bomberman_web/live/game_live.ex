@@ -37,7 +37,8 @@ defmodule BlokusBombermanWeb.GameLive do
       keys_pressed: MapSet.new(),
       p1_selection: p1_selection,
       power_state: power_state,
-      animating_pieces: []  # List of pieces currently animating
+      animating_pieces: [],  # List of pieces currently animating
+      preview_landing: nil  # Preview of where piece will land (for debugging)
     )}
   end
 
@@ -114,7 +115,7 @@ defmodule BlokusBombermanWeb.GameLive do
     game = socket.assigns.game
 
     # Handle spacebar release - start animation for throwing the piece
-    {new_animating_pieces, new_power_state, message} = case key do
+    {new_animating_pieces, new_power_state, new_preview, message} = case key do
       " " ->
         player1_state = power_state.player1
 
@@ -127,7 +128,7 @@ defmodule BlokusBombermanWeb.GameLive do
           target_coords = Game.calculate_placement(game, 1, piece_coords, player1_state.power)
 
           if target_coords != nil do
-            # Start animation
+            # Start animation - the first block of target_coords will travel from player position
             animation = %{
               player_id: 1,
               piece_coords: piece_coords,
@@ -142,25 +143,29 @@ defmodule BlokusBombermanWeb.GameLive do
 
             {[animation | socket.assigns.animating_pieces],
              %{power_state | player1: %{charging: false, power: 0}},
+             target_coords,  # Store for preview
              "Player 1 threw piece with #{player1_state.power}% power!"}
           else
             {socket.assigns.animating_pieces,
              %{power_state | player1: %{charging: false, power: 0}},
+             nil,
              "Invalid placement! Try different power or position."}
           end
         else
           {socket.assigns.animating_pieces,
            %{power_state | player1: %{charging: false, power: 0}},
+           nil,
            socket.assigns.message}
         end
       _ ->
-        {socket.assigns.animating_pieces, power_state, socket.assigns.message}
+        {socket.assigns.animating_pieces, power_state, nil, socket.assigns.message}
     end
 
     {:noreply, assign(socket,
       keys_pressed: keys_pressed,
       power_state: new_power_state,
       animating_pieces: new_animating_pieces,
+      preview_landing: new_preview,
       message: message
     )}
   end
@@ -244,7 +249,10 @@ defmodule BlokusBombermanWeb.GameLive do
         schedule_animation_tick()
       end
 
-      {:noreply, assign(socket, game: new_game, animating_pieces: still_animating)}
+      # Clear preview when animation completes
+      new_preview = if length(still_animating) == 0, do: nil, else: socket.assigns.preview_landing
+
+      {:noreply, assign(socket, game: new_game, animating_pieces: still_animating, preview_landing: new_preview)}
     else
       {:noreply, socket}
     end
@@ -414,6 +422,9 @@ defmodule BlokusBombermanWeb.GameLive do
     # Check if this cell has an animating piece
     animating_color = get_animating_piece_color(assigns.animating_pieces, {x, y})
 
+    # Check if this cell is in the preview landing position (for debugging)
+    is_preview = assigns.preview_landing != nil and {x, y} in assigns.preview_landing
+
     assigns = assigns
       |> assign(:x, x)
       |> assign(:y, y)
@@ -422,6 +433,7 @@ defmodule BlokusBombermanWeb.GameLive do
       |> assign(:on_edge, on_edge)
       |> assign(:placed_color, placed_piece_color)
       |> assign(:animating_color, animating_color)
+      |> assign(:is_preview, is_preview)
 
     ~H"""
     <%= cond do %>
@@ -433,6 +445,11 @@ defmodule BlokusBombermanWeb.GameLive do
       <% @is_p2 -> %>
         <div class="w-8 h-8 border border-red-400 bg-red-500 flex items-center justify-center text-white font-bold">
           2
+        </div>
+
+      <% @is_preview -> %>
+        <div class="w-8 h-8 border-2 border-yellow-400 bg-yellow-500 opacity-50 flex items-center justify-center text-white font-bold text-xs">
+          🎯
         </div>
 
       <% @animating_color -> %>
@@ -476,25 +493,26 @@ defmodule BlokusBombermanWeb.GameLive do
     {start_x, start_y} = anim.start_pos
     progress = anim.progress
 
-    # Find the anchor point (top-left) of the original piece shape
-    first_piece_coord = hd(anim.piece_coords)
-    {first_dx, first_dy} = first_piece_coord
+    # The anchor block (first coordinate in piece_coords) travels in a straight line
+    # from player position to its corresponding position in target_coords
+    anchor_piece = hd(anim.piece_coords)
+    anchor_target = hd(anim.target_coords)
+    {anchor_target_x, anchor_target_y} = anchor_target
 
-    # Find corresponding anchor in target
-    first_target = hd(anim.target_coords)
-    {first_target_x, first_target_y} = first_target
+    # Interpolate where the anchor block should be right now
+    current_anchor_x = start_x + (anchor_target_x - start_x) * progress
+    current_anchor_y = start_y + (anchor_target_y - start_y) * progress
 
-    # Interpolate the anchor position from start to target
-    anchor_x = start_x + (first_target_x - start_x) * progress
-    anchor_y = start_y + (first_target_y - start_y) * progress
+    # Position all blocks relative to the anchor block
+    # using the relative offsets from piece_coords
+    {anchor_piece_x, anchor_piece_y} = anchor_piece
 
-    # Use the original piece shape offsets to maintain the piece structure
-    # Apply each piece block's relative position to the moving anchor
-    Enum.map(anim.piece_coords, fn {dx, dy} ->
-      # Calculate offset relative to the first piece coordinate
-      offset_x = dx - first_dx
-      offset_y = dy - first_dy
-      {round(anchor_x + offset_x), round(anchor_y + offset_y)}
+    Enum.map(anim.piece_coords, fn {piece_x, piece_y} ->
+      # Calculate offset from anchor in the piece shape
+      offset_x = piece_x - anchor_piece_x
+      offset_y = piece_y - anchor_piece_y
+      # Apply offset to current anchor position
+      {round(current_anchor_x + offset_x), round(current_anchor_y + offset_y)}
     end)
   end
 

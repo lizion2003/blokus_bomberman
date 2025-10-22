@@ -126,11 +126,21 @@ defmodule BlokusBomberman.Game do
     end
 
     # Calculate the anchor position for the piece
-    anchor_pos = calculate_throw_position({px, py}, direction, distance)
+    # The anchor block (first coordinate) should land at this position
+    anchor_target_pos = calculate_throw_position({px, py}, direction, distance)
+
+    # Get the anchor block's coordinates in the piece shape
+    [{anchor_dx, anchor_dy} | _] = piece_coords
 
     # Translate piece coordinates to world position
+    # Each block is positioned relative to where the anchor block should be
     placed_coords = Enum.map(piece_coords, fn {dx, dy} ->
-      {anchor_pos |> elem(0) |> Kernel.+(dx), anchor_pos |> elem(1) |> Kernel.+(dy)}
+      # Calculate offset from anchor block
+      offset_x = dx - anchor_dx
+      offset_y = dy - anchor_dy
+      # Position this block relative to the anchor's target position
+      {anchor_target_pos |> elem(0) |> Kernel.+(offset_x),
+       anchor_target_pos |> elem(1) |> Kernel.+(offset_y)}
     end)
 
     # Check if all coordinates are valid (within bounds and not overlapping)
