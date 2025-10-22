@@ -110,7 +110,7 @@ defmodule BlokusBomberman.Game do
     coords = calculate_placement_coords(game, player_id, piece_coords, power)
 
     # Check if all coordinates are valid (within bounds and not overlapping)
-    if valid_placement?(game, coords) do
+    if valid_placement?(game, player_id, coords) do
       coords
     else
       nil
@@ -123,7 +123,7 @@ defmodule BlokusBomberman.Game do
   """
   def calculate_placement_with_validity(game, player_id, piece_coords, power) do
     coords = calculate_placement_coords(game, player_id, piece_coords, power)
-    is_valid = valid_placement?(game, coords)
+    is_valid = valid_placement?(game, player_id, coords)
     {coords, is_valid}
   end
 
@@ -222,22 +222,56 @@ defmodule BlokusBomberman.Game do
     end
   end
 
-  defp valid_placement?(game, coords) do
+  defp valid_placement?(game, player_id, coords) do
     # Check all coordinates are within bounds
     all_in_bounds = Enum.all?(coords, &Board.in_bounds?/1)
 
     # Check no coordinates are on the edges (player movement area)
     not_on_edges = Enum.all?(coords, fn coord -> not Board.on_edge?(coord) end)
 
-    # Check no overlap with existing pieces
-    existing_coords = game.placed_pieces
-      |> Enum.flat_map(fn {_player_id, piece_coords, _color} -> piece_coords end)
+    # Get player color
+    player = if player_id == 1, do: game.player1, else: game.player2
+    player_color = player.color
+
+    # Get existing pieces grouped by color
+    same_color_coords = game.placed_pieces
+      |> Enum.filter(fn {_pid, _coords, color} -> color == player_color end)
+      |> Enum.flat_map(fn {_pid, piece_coords, _color} -> piece_coords end)
       |> MapSet.new()
 
-    no_overlap = coords
-      |> Enum.all?(fn coord -> not MapSet.member?(existing_coords, coord) end)
+    all_color_coords = game.placed_pieces
+      |> Enum.flat_map(fn {_pid, piece_coords, _color} -> piece_coords end)
+      |> MapSet.new()
 
-    all_in_bounds and not_on_edges and no_overlap
+    # Check no overlap with any existing pieces
+    no_overlap = coords
+      |> Enum.all?(fn coord -> not MapSet.member?(all_color_coords, coord) end)
+
+    # Blokus rule: Check corner touching and edge restrictions
+    blokus_rule_satisfied = if MapSet.size(same_color_coords) == 0 do
+      # First piece for this player - no restrictions
+      true
+    else
+      # Must touch at least one same-color piece at a corner
+      has_corner_touch = coords
+        |> Enum.any?(fn {x, y} ->
+          # Check all 4 diagonal corners
+          corners = [{x-1, y-1}, {x+1, y-1}, {x-1, y+1}, {x+1, y+1}]
+          Enum.any?(corners, fn corner -> MapSet.member?(same_color_coords, corner) end)
+        end)
+
+      # Must NOT touch any same-color piece along an edge
+      no_edge_touch = coords
+        |> Enum.all?(fn {x, y} ->
+          # Check all 4 adjacent edges
+          edges = [{x-1, y}, {x+1, y}, {x, y-1}, {x, y+1}]
+          not Enum.any?(edges, fn edge -> MapSet.member?(same_color_coords, edge) end)
+        end)
+
+      has_corner_touch and no_edge_touch
+    end
+
+    all_in_bounds and not_on_edges and no_overlap and blokus_rule_satisfied
   end
 
   defp player_key(1), do: :player1

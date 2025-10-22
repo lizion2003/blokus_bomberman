@@ -52,18 +52,18 @@ defmodule BlokusBombermanWeb.GameLive do
 
     # Handle Player 1 piece selection controls
     new_p1_selection = case key do
-      # Size group cycling (Q/E to cycle through groups 1-5)
+      # Size group cycling (Q/E to cycle through 3 groups: 1-2-3, 4, 5)
       "q" ->
-        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 5
+        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 3
         %{p1_selection | size_tab: new_size, piece_index: 0}
       "Q" ->
-        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 5
+        new_size = if p1_selection.size_tab > 1, do: p1_selection.size_tab - 1, else: 3
         %{p1_selection | size_tab: new_size, piece_index: 0}
       "e" ->
-        new_size = if p1_selection.size_tab < 5, do: p1_selection.size_tab + 1, else: 1
+        new_size = if p1_selection.size_tab < 3, do: p1_selection.size_tab + 1, else: 1
         %{p1_selection | size_tab: new_size, piece_index: 0}
       "E" ->
-        new_size = if p1_selection.size_tab < 5, do: p1_selection.size_tab + 1, else: 1
+        new_size = if p1_selection.size_tab < 3, do: p1_selection.size_tab + 1, else: 1
         %{p1_selection | size_tab: new_size, piece_index: 0}
 
       # Navigate between pieces in group (A/D)
@@ -178,8 +178,19 @@ defmodule BlokusBombermanWeb.GameLive do
     )}
   end
 
+  defp get_pieces_by_group(group) when is_integer(group) do
+    case group do
+      1 -> Piece.pieces_by_size(1) ++ Piece.pieces_by_size(2) ++ Piece.pieces_by_size(3)
+      2 -> Piece.pieces_by_size(4)
+      3 -> Piece.pieces_by_size(5)
+      _ -> []
+    end
+  end
+
+  defp get_pieces_by_group(_assigns, group), do: get_pieces_by_group(group)
+
   defp navigate_piece(selection, direction) do
-    pieces = Piece.pieces_by_size(selection.size_tab)
+    pieces = get_pieces_by_group(selection.size_tab)
     max_index = length(pieces) - 1
     new_index = selection.piece_index + direction
 
@@ -344,7 +355,7 @@ defmodule BlokusBombermanWeb.GameLive do
   end
 
   defp get_selected_piece(selection) do
-    pieces = Piece.pieces_by_size(selection.size_tab)
+    pieces = get_pieces_by_group(selection.size_tab)
 
     if Enum.empty?(pieces) do
       {nil, []}
@@ -392,17 +403,33 @@ defmodule BlokusBombermanWeb.GameLive do
 
             <!-- Size Tabs -->
             <div class="flex gap-1 mb-4">
-              <%= for size <- Piece.all_sizes() do %>
-                <button class={"px-3 py-1 rounded text-sm font-bold #{if size == @p1_selection.size_tab, do: "bg-blue-600 text-white", else: "bg-gray-700 text-gray-400"}"}>
-                  <%= size %>
+              <%= for group <- [1, 2, 3] do %>
+                <%
+                  group_label = case group do
+                    1 -> "1-3"
+                    2 -> "4"
+                    3 -> "5"
+                  end
+                %>
+                <button class={"px-3 py-1 rounded text-sm font-bold #{if group == @p1_selection.size_tab, do: "bg-blue-600 text-white", else: "bg-gray-700 text-gray-400"}"}>
+                  <%= group_label %>
                 </button>
               <% end %>
             </div>
 
             <!-- Current Piece Info -->
+            <%
+              group_name = case @p1_selection.size_tab do
+                1 -> "Small (1-3 blocks)"
+                2 -> "Medium (4 blocks)"
+                3 -> "Large (5 blocks)"
+                _ -> "Unknown"
+              end
+              total_pieces = length(get_pieces_by_group(assigns, @p1_selection.size_tab))
+            %>
             <div class="mb-3 text-gray-300 text-sm">
-              <p>Size: <%= @p1_selection.size_tab %> blocks</p>
-              <p>Piece: <%= @p1_selection.piece_index + 1 %> / <%= length(Piece.pieces_by_size(@p1_selection.size_tab)) %></p>
+              <p>Group: <%= group_name %></p>
+              <p>Piece: <%= @p1_selection.piece_index + 1 %> / <%= total_pieces %></p>
               <p>Rotation: <%= @p1_selection.rotation * 90 %>°</p>
               <p>Flipped: <%= if @p1_selection.flipped, do: "Yes", else: "No" %></p>
             </div>
@@ -414,7 +441,7 @@ defmodule BlokusBombermanWeb.GameLive do
 
             <!-- Controls Help -->
             <div class="mt-4 text-xs text-gray-400">
-              <p><strong>Q/E:</strong> Switch size group (1-5)</p>
+              <p><strong>Q/E:</strong> Switch group (Small/Medium/Large)</p>
               <p><strong>A/D:</strong> Prev/Next piece in group</p>
               <p><strong>R:</strong> Rotate</p>
               <p><strong>F:</strong> Flip</p>
@@ -467,6 +494,7 @@ defmodule BlokusBombermanWeb.GameLive do
 
       <div class="mt-4 text-gray-400 text-sm text-center">
         <p>💡 Select and transform pieces, then throw them onto the board!</p>
+        <p>📐 <strong>Blokus Rule:</strong> After first piece, new pieces must touch same-color corner (not edge)!</p>
         <p>Avatars automatically wrap around all four edges - don't collide!</p>
       </div>
     </div>
