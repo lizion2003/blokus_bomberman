@@ -518,6 +518,29 @@ defmodule BlokusBombermanWeb.GameLive do
     # Check if this cell is in the preview landing position (for debugging)
     is_preview = assigns.preview_landing != nil and {x, y} in assigns.preview_landing
 
+    # Check if this cell should be highlighted based on player facing direction
+    # Players on edges face inward (toward the board interior)
+    {p1_x, p1_y} = p1_pos
+    {p2_x, p2_y} = p2_pos
+
+    highlight_color = cond do
+      # Player 1 (blue) - check if cell is in their facing row/column
+      p1_x == 0 and x == p1_x and y == p1_y -> nil  # Don't highlight player's own position
+      p1_x == 0 and y == p1_y -> :blue  # Left edge, faces right (highlight row)
+      p1_x == Board.size() - 1 and y == p1_y -> :blue  # Right edge, faces left (highlight row)
+      p1_y == 0 and x == p1_x -> :blue  # Top edge, faces down (highlight column)
+      p1_y == Board.size() - 1 and x == p1_x -> :blue  # Bottom edge, faces up (highlight column)
+
+      # Player 2 (red) - check if cell is in their facing row/column
+      p2_x == 0 and x == p2_x and y == p2_y -> nil  # Don't highlight player's own position
+      p2_x == 0 and y == p2_y -> :red  # Left edge, faces right (highlight row)
+      p2_x == Board.size() - 1 and y == p2_y -> :red  # Right edge, faces left (highlight row)
+      p2_y == 0 and x == p2_x -> :red  # Top edge, faces down (highlight column)
+      p2_y == Board.size() - 1 and x == p2_x -> :red  # Bottom edge, faces up (highlight column)
+
+      true -> nil
+    end
+
     assigns = assigns
       |> assign(:x, x)
       |> assign(:y, y)
@@ -528,6 +551,7 @@ defmodule BlokusBombermanWeb.GameLive do
       |> assign(:animating_color, animating_color)
       |> assign(:dissolving_info, dissolving_info)
       |> assign(:is_preview, is_preview)
+      |> assign(:highlight_color, highlight_color)
 
     ~H"""
     <%= cond do %>
@@ -574,10 +598,24 @@ defmodule BlokusBombermanWeb.GameLive do
         <% end %>
 
       <% @on_edge -> %>
-        <div class="w-8 h-8 border border-gray-600 bg-gray-700"></div>
+        <%
+          bg_class = case @highlight_color do
+            :blue -> "bg-blue-900"
+            :red -> "bg-red-900"
+            _ -> "bg-gray-700"
+          end
+        %>
+        <div class={"w-8 h-8 border border-gray-600 #{bg_class}"}></div>
 
       <% true -> %>
-        <div class="w-8 h-8 border border-gray-800 bg-gray-900"></div>
+        <%
+          bg_class = case @highlight_color do
+            :blue -> "bg-blue-900"
+            :red -> "bg-red-900"
+            _ -> "bg-gray-900"
+          end
+        %>
+        <div class={"w-8 h-8 border border-gray-800 #{bg_class}"}></div>
     <% end %>
     """
   end
