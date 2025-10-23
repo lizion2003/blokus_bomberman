@@ -40,7 +40,11 @@ defmodule BlokusBombermanWeb.GameLive do
       animating_pieces: [],  # List of pieces currently animating
       dissolving_pieces: [],  # List of invalid pieces dissolving
       preview_landing: nil,  # Preview of where piece will land (for debugging)
-      power_projection: nil  # {player_id, target_coords} showing where piece will land while charging
+      power_projection: nil,  # {player_id, target_coords} showing where piece will land while charging
+      # Pre-computed lookup maps for faster rendering (updated on change)
+      placed_map: %{},
+      animating_map: %{},
+      dissolving_map: %{}
     )}
   end
 
@@ -328,11 +332,19 @@ defmodule BlokusBombermanWeb.GameLive do
         do: nil,
         else: socket.assigns.preview_landing
 
+      # Build lookup maps once per frame for efficient rendering (O(1) lookup instead of O(n) per cell)
+      placed_map = build_placed_map(new_game.placed_pieces)
+      animating_map = build_animating_map(still_animating)
+      dissolving_map = build_dissolving_map(still_dissolving)
+
       {:noreply, assign(socket,
         game: new_game,
         animating_pieces: still_animating,
         dissolving_pieces: still_dissolving,
-        preview_landing: new_preview
+        preview_landing: new_preview,
+        placed_map: placed_map,
+        animating_map: animating_map,
+        dissolving_map: dissolving_map
       )}
     else
       {:noreply, socket}
@@ -514,14 +526,10 @@ defmodule BlokusBombermanWeb.GameLive do
     p2_pos = assigns.game.player2.position
     on_edge = Board.on_edge?({x, y})
 
-    # Check if this cell has a placed piece
-    placed_piece_color = get_placed_piece_color(assigns.game.placed_pieces, {x, y})
-
-    # Check if this cell has an animating piece
-    animating_color = get_animating_piece_color(assigns.animating_pieces, {x, y})
-
-    # Check if this cell has a dissolving piece
-    dissolving_info = get_dissolving_piece_info(assigns.dissolving_pieces, {x, y})
+    # Use pre-computed maps for O(1) lookup instead of O(n) search
+    placed_piece_color = Map.get(assigns.placed_map, {x, y})
+    animating_color = Map.get(assigns.animating_map, {x, y})
+    dissolving_info = Map.get(assigns.dissolving_map, {x, y})
 
     # Check if this cell is in the preview landing position (for debugging)
     is_preview = assigns.preview_landing != nil and {x, y} in assigns.preview_landing
@@ -641,33 +649,8 @@ defmodule BlokusBombermanWeb.GameLive do
     """
   end
 
-  defp get_placed_piece_color(placed_pieces, coord) do
-    Enum.find_value(placed_pieces, fn {_player_id, coords, color} ->
-      if coord in coords, do: color, else: nil
-    end)
-  end
-
-  defp get_animating_piece_color(animating_pieces, coord) do
-    Enum.find_value(animating_pieces, fn anim ->
-      # Interpolate between start position and target coordinates
-      current_coords = interpolate_piece_position(anim)
-      if coord in current_coords, do: anim.color, else: nil
-    end)
-  end
-
-  defp get_dissolving_piece_info(dissolving_pieces, coord) do
-    Enum.find_value(dissolving_pieces, fn anim ->
-      # Dissolving pieces stay at their target position
-      current_coords = interpolate_piece_position(anim)
-      if coord in current_coords do
-        shake_offset_x = Map.get(anim, :shake_offset_x, 0)
-        shake_offset_y = Map.get(anim, :shake_offset_y, 0)
-        {anim.color, anim.dissolve_progress, shake_offset_x, shake_offset_y}
-      else
-        nil
-      end
-    end)
-  end
+  # Removed old O(n) helper functions - now using O(1) pre-computed maps
+  # defp get_placed_piece_color, get_animating_piece_color, get_dissolving_piece_info
 
   defp interpolate_piece_position(anim) do
     {start_x, start_y} = anim.start_pos
@@ -751,5 +734,35 @@ defmodule BlokusBombermanWeb.GameLive do
       </div>
       """
     end
+  end
+
+  # Helper functions to build efficient lookup maps (O(1) instead of O(n) per cell)
+  defp build_placed_map(placed_pieces) do
+    placed_pieces
+    |> Enum.flat_map(fn {_player_id, coords, color} ->
+      Enum.map(coords, fn coord -> {coord, color} end)
+    end)
+    |> Map.new()
+  end
+
+  defp build_animating_map(animating_pieces) do
+    animating_pieces
+    |> Enum.flat_map(fn anim ->
+      current_coords = interpolate_piece_position(anim)
+      Enum.map(current_coords, fn coord -> {coord, anim.color} end)
+    end)
+    |> Map.new()
+  end
+
+  defp build_dissolving_map(dissolving_pieces) do
+    dissolving_pieces
+    |> Enum.flat_map(fn anim ->
+      current_coords = interpolate_piece_position(anim)
+      shake_offset_x = Map.get(anim, :shake_offset_x, 0)
+      shake_offset_y = Map.get(anim, :shake_offset_y, 0)
+      info = {anim.color, anim.dissolve_progress, shake_offset_x, shake_offset_y}
+      Enum.map(current_coords, fn coord -> {coord, info} end)
+    end)
+    |> Map.new()
   end
 end
