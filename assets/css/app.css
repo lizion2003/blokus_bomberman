@@ -104,15 +104,15 @@
 
 /* This file is for your main application CSS */
 
-/* Performance optimizations for smooth animations */
+/* Performance optimizations for smooth 60 FPS animations */
 .player-avatar {
-  transition: all 0.15s ease-out; /* Match server update interval for smooth interpolation */
+  transition: all 0.15s ease-out; /* Smooth 60fps interpolation between server updates */
   transform: translateZ(0);
   will-change: transform;
 }
 
 .animating-piece {
-  transition: all 0.033s linear; /* Smooth 30fps animation for thrown pieces */
+  transition: all 0.0167s linear; /* 60fps (16.7ms) for buttery smooth thrown pieces */
   transform: translateZ(0);
   will-change: transform;
 }
@@ -120,8 +120,18 @@
 .animate-pulse {
   transform: translateZ(0);
   backface-visibility: hidden;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .grid > * {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.0167s ease-in-out; /* 60fps background transitions */
 }
