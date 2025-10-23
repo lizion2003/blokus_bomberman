@@ -8,7 +8,7 @@ services:
         generateValue: true
         sync: false
       - key: PHX_HOST
-        sync: false
+        value: blokus-bomberman.onrender.com
       - key: PHX_SERVER
         value: "true"
       - key: PORT
