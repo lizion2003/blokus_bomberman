@@ -39,7 +39,8 @@ defmodule BlokusBombermanWeb.GameLive do
       power_state: power_state,
       animating_pieces: [],  # List of pieces currently animating
       dissolving_pieces: [],  # List of invalid pieces dissolving
-      preview_landing: nil  # Preview of where piece will land (for debugging)
+      preview_landing: nil,  # Preview of where piece will land (for debugging)
+      power_projection: nil  # {player_id, target_coords} showing where piece will land while charging
     )}
   end
 
@@ -224,20 +225,27 @@ defmodule BlokusBombermanWeb.GameLive do
     if connected?(socket) do
       power_state = socket.assigns.power_state
       player1_state = power_state.player1
+      game = socket.assigns.game
+      p1_selection = socket.assigns.p1_selection
 
-      new_power_state = if player1_state.charging do
+      {new_power_state, power_projection} = if player1_state.charging do
         # Increase power, cycling back to 0 if it exceeds max
         new_power = rem(player1_state.power + 2, @max_power + 1)
+
+        # Calculate where piece would land at current power
+        {_piece_type, piece_coords} = get_selected_piece(p1_selection)
+        {target_coords, _is_valid} = Game.calculate_placement_with_validity(game, 1, piece_coords, new_power)
 
         # Continue charging
         schedule_power_tick()
 
-        %{power_state | player1: %{player1_state | power: new_power}}
+        {%{power_state | player1: %{player1_state | power: new_power}},
+         {1, target_coords}}
       else
-        power_state
+        {power_state, nil}
       end
 
-      {:noreply, assign(socket, power_state: new_power_state)}
+      {:noreply, assign(socket, power_state: new_power_state, power_projection: power_projection)}
     else
       {:noreply, socket}
     end
@@ -541,6 +549,13 @@ defmodule BlokusBombermanWeb.GameLive do
       true -> nil
     end
 
+    # Check if this cell is part of the power projection
+    is_power_projection = case assigns.power_projection do
+      {_player_id, target_coords} when is_list(target_coords) ->
+        {x, y} in target_coords
+      _ -> false
+    end
+
     assigns = assigns
       |> assign(:x, x)
       |> assign(:y, y)
@@ -552,6 +567,7 @@ defmodule BlokusBombermanWeb.GameLive do
       |> assign(:dissolving_info, dissolving_info)
       |> assign(:is_preview, is_preview)
       |> assign(:highlight_color, highlight_color)
+      |> assign(:is_power_projection, is_power_projection)
 
     ~H"""
     <%= cond do %>
@@ -596,6 +612,11 @@ defmodule BlokusBombermanWeb.GameLive do
         <% else %>
           <div class="w-8 h-8 border border-red-300 bg-red-400 opacity-80"></div>
         <% end %>
+
+      <% @is_power_projection -> %>
+        <div class="w-8 h-8 border-2 border-yellow-300 bg-yellow-500 opacity-70 animate-pulse flex items-center justify-center">
+          <span class="text-white text-xl font-bold">⚡</span>
+        </div>
 
       <% @on_edge -> %>
         <%
