@@ -19,7 +19,7 @@ RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
 # Copy compile-time config files before compiling dependencies
-COPY config/config.exs config/${MIX_ENV}.exs config/
+COPY config/config.exs config/${MIX_ENV}.exs config/runtime.exs config/
 RUN mix deps.compile
 
 # Copy priv and assets
@@ -51,5 +51,6 @@ COPY --from=build --chown=nobody:nobody /app/_build/prod/rel/blokus_bomberman ./
 ENV HOME=/app
 ENV MIX_ENV=prod
 ENV PORT=4000
+ENV PHX_SERVER=true
 
 CMD ["bin/blokus_bomberman", "start"]
