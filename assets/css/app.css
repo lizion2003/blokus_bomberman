@@ -103,3 +103,20 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Performance optimizations for hosted deployment */
+* {
+  /* Enable hardware acceleration for smoother animations */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Optimize grid rendering */
+.grid {
+  will-change: auto;
+}
+
+/* Smooth transitions for piece animations */
+.animate-pulse {
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

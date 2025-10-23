@@ -3,11 +3,11 @@ defmodule BlokusBombermanWeb.GameLive do
 
   alias BlokusBomberman.{Game, Board, Piece}
 
-  @move_interval 70  # milliseconds between moves when key is held
-  @power_interval 20  # milliseconds between power updates
+  @move_interval 100  # milliseconds between moves when key is held (reduced from 70)
+  @power_interval 30  # milliseconds between power updates (reduced from 20)
   @max_power 100  # Maximum power value
   @animation_duration 500  # milliseconds for throw animation
-  @animation_interval 16  # ~60 FPS
+  @animation_interval 25  # ~40 FPS (reduced from 16ms/60fps for better network performance)
 
   @impl true
   def mount(_params, _session, socket) do
