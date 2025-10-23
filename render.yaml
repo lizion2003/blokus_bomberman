@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: blokus-bomberman
+    runtime: docker
+    plan: free
+    envVars:
+      - key: SECRET_KEY_BASE
+        generateValue: true
+      - key: PHX_HOST
+        sync: false
+      - key: PHX_SERVER
+        value: true
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
