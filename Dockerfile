@@ -1,7 +1,7 @@
 FROM hexpm/elixir:1.17.2-erlang-27.0-alpine-3.20.1 AS build
 
 # Install build dependencies
-RUN apk add --no-cache build-base git nodejs npm
+RUN apk add --no-cache build-base git
 
 # Prepare build dir
 WORKDIR /app
@@ -26,16 +26,14 @@ RUN mix deps.compile
 COPY priv priv
 COPY assets assets
 
-# Install npm dependencies and build assets
-WORKDIR /app/assets
-RUN npm install --progress=false --no-audit --loglevel=error
-RUN npm run deploy
-WORKDIR /app
-
 # Compile and build release
 COPY lib lib
 RUN mix compile
-RUN mix phx.digest
+
+# Build assets (Phoenix 1.7+ uses esbuild)
+RUN mix assets.deploy
+
+# Build release
 RUN mix release
 
 # Prepare release image
