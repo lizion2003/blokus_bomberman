@@ -104,19 +104,24 @@
 
 /* This file is for your main application CSS */
 
-/* Performance optimizations for hosted deployment */
-* {
-  /* Enable hardware acceleration for smoother animations */
+/* Performance optimizations for smooth animations */
+.player-avatar {
+  transition: all 0.15s ease-out; /* Match server update interval for smooth interpolation */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.animating-piece {
+  transition: all 0.033s linear; /* Smooth 30fps animation for thrown pieces */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.animate-pulse {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
 
-/* Optimize grid rendering */
-.grid {
-  will-change: auto;
-}
-
-/* Smooth transitions for piece animations */
-.animate-pulse {
-  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.grid > * {
+  transition: background-color 0.15s ease-in-out;
 }

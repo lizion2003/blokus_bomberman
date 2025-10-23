@@ -3,11 +3,11 @@ defmodule BlokusBombermanWeb.GameLive do
 
   alias BlokusBomberman.{Game, Board, Piece}
 
-  @move_interval 100  # milliseconds between moves when key is held (reduced from 70)
-  @power_interval 30  # milliseconds between power updates (reduced from 20)
+  @move_interval 150  # milliseconds between moves - client CSS handles smooth transition
+  @power_interval 40  # milliseconds between power updates - client handles smoothness
   @max_power 100  # Maximum power value
   @animation_duration 500  # milliseconds for throw animation
-  @animation_interval 25  # ~40 FPS (reduced from 16ms/60fps for better network performance)
+  @animation_interval 33  # ~30 FPS - client CSS provides smooth interpolation
 
   @impl true
   def mount(_params, _session, socket) do
@@ -572,12 +572,12 @@ defmodule BlokusBombermanWeb.GameLive do
     ~H"""
     <%= cond do %>
       <% @is_p1 -> %>
-        <div class="w-8 h-8 border border-blue-400 bg-blue-500 flex items-center justify-center text-white font-bold">
+        <div class="w-8 h-8 border border-blue-400 bg-blue-500 flex items-center justify-center text-white font-bold player-avatar">
           1
         </div>
 
       <% @is_p2 -> %>
-        <div class="w-8 h-8 border border-red-400 bg-red-500 flex items-center justify-center text-white font-bold">
+        <div class="w-8 h-8 border border-red-400 bg-red-500 flex items-center justify-center text-white font-bold player-avatar">
           2
         </div>
 
@@ -601,9 +601,9 @@ defmodule BlokusBombermanWeb.GameLive do
 
       <% @animating_color -> %>
         <%= if @animating_color == :blue do %>
-          <div class="w-8 h-8 border border-blue-300 bg-blue-400 opacity-60 animate-pulse"></div>
+          <div class="w-8 h-8 border border-blue-300 bg-blue-400 opacity-60 animate-pulse animating-piece"></div>
         <% else %>
-          <div class="w-8 h-8 border border-red-300 bg-red-400 opacity-60 animate-pulse"></div>
+          <div class="w-8 h-8 border border-red-300 bg-red-400 opacity-60 animate-pulse animating-piece"></div>
         <% end %>
 
       <% @placed_color -> %>
