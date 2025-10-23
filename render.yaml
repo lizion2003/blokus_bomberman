@@ -6,9 +6,12 @@ services:
     envVars:
       - key: SECRET_KEY_BASE
         generateValue: true
+        sync: false
       - key: PHX_HOST
         sync: false
       - key: PHX_SERVER
-        value: true
+        value: "true"
+      - key: PORT
+        value: "4000"
     dockerfilePath: ./Dockerfile
     dockerContext: .
