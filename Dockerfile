@@ -28,7 +28,7 @@ COPY assets assets
 
 # Install npm dependencies and build assets
 WORKDIR /app/assets
-RUN npm ci --progress=false --no-audit --loglevel=error
+RUN npm install --progress=false --no-audit --loglevel=error
 RUN npm run deploy
 WORKDIR /app
 
